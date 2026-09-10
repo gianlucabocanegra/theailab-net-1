@@ -90,7 +90,11 @@ class TestReachability:
                 href = href.split("#")[0]
                 if not href:
                     continue
-                target = (current.parent / unquote(href)).resolve()
+                href = unquote(href)
+                # A leading "/" is site-root-relative (as a browser resolves
+                # it against the site origin), not filesystem-root-relative.
+                base = site_root if href.startswith("/") else current.parent
+                target = (base / href.lstrip("/")).resolve()
                 if target.exists() and target not in visited:
                     queue.append(target)
 

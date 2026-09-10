@@ -77,6 +77,60 @@ class TestNavConsistency:
         assert not broken, f"Broken nav links: {broken[:15]}"
 
 
+class TestNavHrefsIdentical:
+    def test_all_nav_pages_have_identical_nav_hrefs(self, site_root, nav_pages):
+        """Every page's nav hrefs must be byte-identical, not just the link
+        labels. The site previously had three different conventions for the
+        same nav (parent-relative '../core/x.html', bare relative 'x.html',
+        and root-absolute '/x.html') that happened to all resolve correctly
+        but were not literally the same markup."""
+        reference = None
+        failures = []
+        for f in nav_pages:
+            soup = BeautifulSoup(f.read_text(encoding="utf-8"), "lxml")
+            nav = soup.select_one("nav.main-nav")
+            if not nav:
+                continue
+            hrefs = [a.get("href", "") for a in nav.find_all("a")]
+            if reference is None:
+                reference = (_rel(f), hrefs)
+                continue
+            if hrefs != reference[1]:
+                failures.append(f"{_rel(f)}: {hrefs} != {reference[0]}'s {reference[1]}")
+        assert not failures, f"Pages with divergent nav hrefs: {failures[:15]}"
+
+
+class TestLocalLinksAreRootAbsolute:
+    """The site standardizes on root-absolute paths ('/core/x.html',
+    '/css/style.css') for every internal link and local asset reference, so
+    pages keep working regardless of the requesting page's directory depth
+    or if the site is ever served from a different structure."""
+
+    def test_all_local_anchor_hrefs_are_root_absolute(self, parsed_pages):
+        failures = []
+        for path, _, soup in parsed_pages:
+            for a in soup.find_all("a"):
+                href = a.get("href", "")
+                if not href or href.startswith(("http://", "https://", "mailto:", "#", "javascript:")):
+                    continue
+                if not href.startswith("/"):
+                    failures.append(f"{_rel(path)}: href='{href}'")
+        assert not failures, f"Non-root-absolute internal links: {failures[:20]}"
+
+    def test_all_local_stylesheet_and_script_paths_are_root_absolute(self, parsed_pages):
+        failures = []
+        for path, _, soup in parsed_pages:
+            for tag in soup.find_all("link", rel="stylesheet"):
+                href = tag.get("href", "")
+                if href and not href.startswith(("http://", "https://", "/")):
+                    failures.append(f"{_rel(path)}: link href='{href}'")
+            for tag in soup.find_all("script", src=True):
+                src = tag.get("src", "")
+                if src and not src.startswith(("http://", "https://", "/")):
+                    failures.append(f"{_rel(path)}: script src='{src}'")
+        assert not failures, f"Non-root-absolute local asset paths: {failures[:20]}"
+
+
 class TestScheduleLinksAllWeeks:
     def test_schedule_links_to_all_15_weeks(self, site_root):
         """core/schedule.html must link to weeks/week-01.html through weeks/week-15.html."""
